@@ -1,0 +1,161 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasRole(roles) {
+      return signedIn() && userDoc().data.role in roles;
+    }
+
+    function isAdmin() {
+      return hasRole(['admin']);
+    }
+
+    function isEngineer() {
+      return hasRole(['admin', 'engineer']);
+    }
+
+    function isOperator() {
+      return hasRole(['admin', 'engineer', 'operator']);
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == userId;
+      allow update: if isAdmin() || request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    match /parts/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /part_revisions/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /models/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /bom_items/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /suppliers/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if isAdmin();
+    }
+
+    match /purchase_requests/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /purchase_orders/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /goods_receipts/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /quality_plans/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /quality_records/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isOperator();
+      allow delete: if false;
+    }
+
+    match /nonconformities/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isOperator();
+      allow delete: if false;
+    }
+
+    match /warehouses/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /locations/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /inventory_lots/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isOperator();
+      allow delete: if false;
+    }
+
+    match /stock_movements/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isOperator();
+      allow delete: if false;
+    }
+
+    match /customers/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /sales_orders/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /shipments/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /production_orders/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isEngineer();
+      allow delete: if false;
+    }
+
+    match /production_logs/{docId} {
+      allow read: if isOperator();
+      allow create, update: if isOperator();
+      allow delete: if false;
+    }
+
+    match /logs/{docId} {
+      allow read: if isEngineer();
+      allow create: if isOperator();
+      allow update, delete: if false;
+    }
+  }
+}

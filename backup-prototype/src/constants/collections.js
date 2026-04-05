@@ -1,0 +1,31 @@
+export const COLLECTIONS = {
+  USERS: "users",
+  PARTS: "parts",
+  PART_REVISIONS: "part_revisions",
+  MODELS: "models",
+  BOM_ITEMS: "bom_items",
+  SUPPLIERS: "suppliers",
+  PURCHASE_REQUESTS: "purchase_requests",
+  PURCHASE_ORDERS: "purchase_orders",
+  GOODS_RECEIPTS: "goods_receipts",
+  QUALITY_PLANS: "quality_plans",
+  QUALITY_RECORDS: "quality_records",
+  NONCONFORMITIES: "nonconformities",
+  WAREHOUSES: "warehouses",
+  LOCATIONS: "locations",
+  INVENTORY_LOTS: "inventory_lots",
+  STOCK_MOVEMENTS: "stock_movements",
+  CUSTOMERS: "customers",
+  SALES_ORDERS: "sales_orders",
+  SHIPMENTS: "shipments",
+  PRODUCTION_ORDERS: "production_orders",
+  PRODUCTION_LOGS: "production_logs",
+  LOGS: "logs",
+};
+
+export const MATERIAL_COLLECTIONS = [
+  COLLECTIONS.PARTS,
+  COLLECTIONS.PART_REVISIONS,
+  COLLECTIONS.MODELS,
+  COLLECTIONS.BOM_ITEMS,
+];

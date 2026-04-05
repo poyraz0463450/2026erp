@@ -1,0 +1,244 @@
+{
+  "parts": {
+    "part_001": {
+      "part_number": "PRT-001",
+      "part_name": "Receiver Body",
+      "category": "part",
+      "subcategory": "steel",
+      "unit": "piece",
+      "material": "42CrMo4",
+      "material_standard": "EN 10083",
+      "upper_tolerance": 0.02,
+      "lower_tolerance": -0.02,
+      "surface_treatment": "Phosphate",
+      "hardness": "30-34 HRC",
+      "weight": 1.35,
+      "dimensions_ctq": "CTQ-01 Bore Dia / CTQ-02 Flatness",
+      "critical_stock_quantity": 25,
+      "minimum_stock_level": 40
+    }
+  },
+  "part_revisions": {
+    "rev_a": {
+      "part_id": "part_001",
+      "revision_code": "A",
+      "drawing_pdf_path": "drawings/part_001/rev_a.pdf",
+      "description": "Initial release"
+    }
+  },
+  "models": {
+    "model_001": {
+      "model_name": "Rifle-X Platform",
+      "description": "5.56 platform ana urun agaci"
+    }
+  },
+  "bom_items": {
+    "bom_001": {
+      "model_id": "model_001",
+      "part_id": "part_001",
+      "quantity": 1
+    }
+  },
+  "suppliers": {
+    "supplier_001": {
+      "name": "Anadolu Celik Sanayi",
+      "contact_email": "satinalma@anadolucelik.com",
+      "contact_phone": "+90 312 555 00 10",
+      "contact_person": "Murat Kaya"
+    }
+  },
+  "purchase_requests": {
+    "pr_001": {
+      "part_id": "part_001",
+      "quantity": 50,
+      "request_date": "2026-04-05",
+      "description": "Ilk prototip seri icin hammadde ihtiyaci",
+      "status": "approved"
+    }
+  },
+  "purchase_orders": {
+    "po_001": {
+      "supplier_id": "supplier_001",
+      "purchase_request_id": "pr_001",
+      "order_date": "2026-04-05",
+      "status": "sent",
+      "items": [
+        {
+          "part_id": "part_001",
+          "quantity": 50,
+          "received_quantity": 20,
+          "unit_price": 1450,
+          "line_total": 72500
+        }
+      ],
+      "total_amount": 72500
+    }
+  },
+  "goods_receipts": {
+    "gr_001": {
+      "purchase_order_id": "po_001",
+      "supplier_id": "supplier_001",
+      "part_id": "part_001",
+      "received_quantity": 20,
+      "lot_number": "LOT-26-0405-A",
+      "warehouse_id": "wh_main",
+      "location_id": "loc_raw_01",
+      "receipt_date": "2026-04-05",
+      "qc_status": "pending"
+    }
+  },
+  "quality_plans": {
+    "qp_001": {
+      "part_id": "part_001",
+      "criteria": "Outer diameter",
+      "upper_tolerance": 0.02,
+      "lower_tolerance": -0.02,
+      "measurement_method": "Digital bore gauge",
+      "notes": "100% kontrol"
+    }
+  },
+  "quality_records": {
+    "qr_001": {
+      "inspection_type": "incoming",
+      "part_id": "part_001",
+      "goods_receipt_id": "gr_001",
+      "result": "accepted",
+      "inspection_date": "2026-04-05",
+      "measurement_data": "Sample mean: 0.006",
+      "notes": "Kabul edildi"
+    }
+  },
+  "nonconformities": {
+    "nc_001": {
+      "part_id": "part_001",
+      "source_type": "incoming_qc",
+      "source_id": "qr_001",
+      "description": "Yuzeyde lokal cizik",
+      "action": "rework",
+      "status": "open"
+    }
+  },
+  "warehouses": {
+    "wh_main": {
+      "code": "WH-MAIN",
+      "name": "Ana Depo",
+      "description": "Merkezi hammadde ve yari mamul depo"
+    }
+  },
+  "locations": {
+    "loc_raw_01": {
+      "warehouse_id": "wh_main",
+      "code": "RAW-A-01",
+      "name": "Hammadde Raf 01",
+      "description": "Giris kalite oncesi alan"
+    }
+  },
+  "inventory_lots": {
+    "part__part_001__lot_26_0405_a__wh_main__loc_raw_01": {
+      "item_type": "part",
+      "item_id": "part_001",
+      "lot_number": "LOT-26-0405-A",
+      "warehouse_id": "wh_main",
+      "location_id": "loc_raw_01",
+      "on_hand_quantity": 20,
+      "available_quantity": 0,
+      "quarantine_quantity": 20,
+      "rejected_quantity": 0
+    }
+  },
+  "stock_movements": {
+    "sm_001": {
+      "movement_type": "receipt",
+      "item_type": "part",
+      "item_id": "part_001",
+      "quantity": 20,
+      "lot_number": "LOT-26-0405-A",
+      "warehouse_id": "wh_main",
+      "location_id": "loc_raw_01",
+      "reference_type": "purchase_order",
+      "reference_id": "po_001",
+      "note": "Goods receipt ile karantinaya alindi"
+    }
+  },
+  "customers": {
+    "customer_001": {
+      "company_name": "Milli Savunma Musterisi A",
+      "contact_person": "Ahmet Yildiz",
+      "contact_email": "ahmet.yildiz@example.com",
+      "contact_phone": "+90 312 555 11 22"
+    }
+  },
+  "sales_orders": {
+    "so_001": {
+      "customer_id": "customer_001",
+      "model_id": "model_001",
+      "quantity": 10,
+      "due_date": "2026-04-20",
+      "status": "confirmed",
+      "shipped_quantity": 0
+    }
+  },
+  "shipments": {
+    "sh_001": {
+      "sales_order_id": "so_001",
+      "model_id": "model_001",
+      "quantity": 5,
+      "ship_date": "2026-04-22",
+      "lot_number": "FG-LOT-001",
+      "warehouse_id": "wh_main",
+      "location_id": "fg_01"
+    }
+  },
+  "production_orders": {
+    "mo_001": {
+      "model_id": "model_001",
+      "quantity": 10,
+      "planned_date": "2026-04-10",
+      "status": "pending",
+      "bom_snapshot": [
+        {
+          "part_id": "part_001",
+          "quantity_per": 1,
+          "required_quantity": 10
+        }
+      ],
+      "good_quantity": 0,
+      "scrap_quantity": 0
+    }
+  },
+  "production_logs": {
+    "pl_001": {
+      "production_order_id": "mo_001",
+      "log_type": "start",
+      "operator_id": "operator_001",
+      "material_allocations": [
+        {
+          "part_id": "part_001",
+          "lot_number": "LOT-26-0405-A",
+          "warehouse_id": "wh_main",
+          "location_id": "loc_raw_01",
+          "quantity": 10
+        }
+      ]
+    }
+  },
+  "users": {
+    "admin_001": {
+      "full_name": "ERP Admin",
+      "email": "admin@example.com",
+      "role": "admin"
+    }
+  },
+  "logs": {
+    "log_001": {
+      "user_id": "admin_001",
+      "action": "goods_receipts.create",
+      "entity_type": "goods_receipts",
+      "entity_id": "gr_001",
+      "details": {
+        "purchase_order_id": "po_001",
+        "part_id": "part_001"
+      }
+    }
+  }
+}
