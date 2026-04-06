@@ -19,10 +19,10 @@ export function AuthProvider({ children }) {
           if (snap.exists()) {
             setUserDoc(snap.data());
           } else {
-            setUserDoc({ role: 'viewer', displayName: firebaseUser.email });
+            setUserDoc({ role: 'viewer', displayName: firebaseUser.email, full_name: firebaseUser.email });
           }
         } catch {
-          setUserDoc({ role: 'viewer', displayName: firebaseUser.email });
+          setUserDoc({ role: 'viewer', displayName: firebaseUser.email, full_name: firebaseUser.email });
         }
       } else {
         setUser(null);
@@ -40,9 +40,11 @@ export function AuthProvider({ children }) {
   const isKalite = ['admin', 'kalite'].includes(role);
   const isOperator = role === 'operator';
   const isSatinAlma = ['admin', 'satin_alma'].includes(role);
+  const isFinance = ['admin', 'finance'].includes(role);
+  const isSales = ['admin', 'sales'].includes(role);
 
   return (
-    <AuthContext.Provider value={{ user, userDoc, role, isAdmin, isEngineer, isWarehouse, isKalite, isOperator, isSatinAlma, loading }}>
+    <AuthContext.Provider value={{ user, userDoc, role, isAdmin, isEngineer, isWarehouse, isKalite, isOperator, isSatinAlma, isFinance, isSales, loading }}>
       {children}
     </AuthContext.Provider>
   );

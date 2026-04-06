@@ -121,7 +121,7 @@ export default function ModelDetail() {
           <button style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 20px', background: '#1e293b', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
             <Settings size={18} /> Model Ayarları
           </button>
-          <button onClick={() => navigate('/work-orders/new', { state: { modelId: id, modelCode: model.modelCode } })} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 24px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)' }}>
+          <button onClick={() => navigate('/work-orders', { state: { openCreate: true, modelId: id, modelCode: model.modelCode } })} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 24px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)' }}>
             <Play size={18} fill="currentColor" /> Üretim Emri Aç
           </button>
         </div>

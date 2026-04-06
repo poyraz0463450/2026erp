@@ -18,6 +18,14 @@ import { formatDate, getAQLSampling } from '../../utils/helpers';
 const CARD_STYLE = { background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, padding: 20, marginBottom: 16 };
 const LABEL_STYLE = { display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 6, textTransform: 'uppercase' };
 const INPUT_STYLE = { width: '100%', height: 38, padding: '0 12px', background: '#0a0f1e', border: '1px solid #334155', borderRadius: 6, color: '#e2e8f0', fontSize: 13, outline: 'none' };
+const QC_RESULT_OPTIONS = ['Kabul', 'Koşullu Kabul', 'Kısmi Red', 'Red'];
+
+const getOverallResultFromRows = (rows = []) => {
+  if (rows.some((row) => row.result === 'Red')) return 'Red';
+  if (rows.some((row) => row.result === 'Kısmi Red')) return 'Kısmi Red';
+  if (rows.some((row) => row.result === 'Koşullu Kabul')) return 'Koşullu Kabul';
+  return 'Kabul';
+};
 
 export default function InspectionDetail() {
   const { id } = useParams();
@@ -33,6 +41,20 @@ export default function InspectionDetail() {
   const [parts, setParts] = useState([]);
   const [plans, setPlans] = useState([]);
   const [orders, setOrders] = useState([]);
+
+  const normalizeInspection = (rawInspection = {}) => ({
+    measurements: [],
+    notes: '',
+    status: 'AÃ§Ä±k',
+    overallResult: 'Kabul',
+    lotSize: 0,
+    ...rawInspection,
+    measurements: Array.isArray(rawInspection.measurements) ? rawInspection.measurements : [],
+    notes: rawInspection.notes ?? '',
+    status: rawInspection.status ?? 'AÃ§Ä±k',
+    overallResult: rawInspection.overallResult ?? 'Kabul',
+    lotSize: Number.isFinite(Number(rawInspection.lotSize)) ? Number(rawInspection.lotSize) : 0
+  });
 
   useEffect(() => {
     if (id === 'new') {
@@ -73,7 +95,7 @@ export default function InspectionDetail() {
           navigate('/qc/inspections');
           return;
         }
-        setInspection({ id: iDoc.id, ...iDoc.data() });
+        setInspection(normalizeInspection({ id: iDoc.id, ...iDoc.data() }));
       }
 
       setParts(pData.docs.map(x => ({ id: x.id, ...x.data() })));
@@ -89,7 +111,8 @@ export default function InspectionDetail() {
   const applyPlan = (planId) => {
     const plan = plans.find(p => p.id === planId);
     if (!plan) return;
-    const measures = plan.checkpoints.map(cp => ({
+    const checkpoints = Array.isArray(plan?.checkpoints) ? plan.checkpoints : [];
+    const measures = checkpoints.map(cp => ({
       characteristic: cp.characteristic,
       nominal: cp.nominalValue,
       min: cp.minVal,
@@ -104,7 +127,8 @@ export default function InspectionDetail() {
   };
 
   const updateMeasurement = (idx, val) => {
-    const ms = [...inspection.measurements];
+    const ms = [...(inspection?.measurements || [])];
+    if (!ms[idx]) return;
     ms[idx].actual = val;
     
     // Auto Pass/Fail Logic if numeric
@@ -115,12 +139,15 @@ export default function InspectionDetail() {
     if (!isNaN(actualNum) && !isNaN(min) && !isNaN(max)) {
       ms[idx].result = (actualNum >= min && actualNum <= max) ? 'Kabul' : 'Red';
     }
-    
-    setInspection({ ...inspection, measurements: ms });
-    
-    // Auto overall result
-    const hasFail = ms.some(m => m.result === 'Red');
-    setInspection(prev => ({ ...prev, measurements: ms, overallResult: hasFail ? 'Red' : 'Kabul' }));
+
+    setInspection(prev => ({ ...prev, measurements: ms, overallResult: getOverallResultFromRows(ms) }));
+  };
+
+  const updateMeasurementResult = (idx, nextResult) => {
+    const ms = [...(inspection?.measurements || [])];
+    if (!ms[idx]) return;
+    ms[idx].result = QC_RESULT_OPTIONS.includes(nextResult) ? nextResult : 'Kabul';
+    setInspection(prev => ({ ...prev, measurements: ms, overallResult: getOverallResultFromRows(ms) }));
   };
 
   const handleSave = async () => {
@@ -135,19 +162,20 @@ export default function InspectionDetail() {
         toast.success('Kayıt güncellendi');
       }
 
-      // Logic: If result is KABUL, update inventory batch status
-      if (inspection.overallResult === 'Kabul' && inspection.batchId) {
+      // Logic: accepted-like outcomes release stock from quarantine
+      if (['Kabul', 'Koşullu Kabul'].includes(inspection.overallResult) && inspection.batchId) {
         await updateInventoryBatch(inspection.batchId, {
           status: 'Sağlam', // Now available for production
           qcReleasedDate: new Date().toISOString(),
-          qcReleasedBy: userDoc?.displayName
+          qcReleasedBy: userDoc?.displayName,
+          qcDecision: inspection.overallResult
         });
         toast.success('Parçalar KARANTİNA -> SAĞLAM stoklara aktarıldı.');
       }
 
-      // Logic: If result is RED, suggest NCR
-      if (inspection.overallResult === 'Red') {
-        const createNcr = confirm('Muayene RED edildi. Otomatik Uygunsuzluk Raporu (NCR) oluşturulsun mu?');
+      // Logic: failed outcomes trigger NCR suggestion
+      if (['Red', 'Kısmi Red'].includes(inspection.overallResult)) {
+        const createNcr = confirm(`Muayene sonucu "${inspection.overallResult}" olarak işaretlendi. Otomatik Uygunsuzluk Raporu (NCR) oluşturulsun mu?`);
         if (createNcr) {
            await addNcrRecord({
              inspectionId: finalId,
@@ -157,7 +185,7 @@ export default function InspectionDetail() {
              description: 'Muayene kriterlerinde tolerans dışı ölçüm tespit edildi.',
              status: 'Yeni',
              reportedBy: userDoc?.displayName,
-             findings: inspection.measurements.filter(m => m.result === 'Red'),
+             findings: (inspection?.measurements || []).filter(m => m.result === 'Red'),
              createdAt: new Date().toISOString(),
              // 8D structure placeholders
              d1_team: [], d2_problem: '', d3_containment: '', d4_root_cause: '', 
@@ -174,6 +202,18 @@ export default function InspectionDetail() {
   };
 
   if (loading) return <Spinner />;
+  if (!inspection) {
+    return <EmptyState title="Muayene kaydÄ± yÃ¼klenemedi" description="KaydÄ± tekrar aÃ§mayÄ± deneyin." />;
+  }
+
+  const measurementRows = Array.isArray(inspection.measurements) ? inspection.measurements : [];
+  const resultBadgeMap = {
+    'Kabul': { color: '#34d399', text: '✓ KABUL EDİLDİ' },
+    'Koşullu Kabul': { color: '#fbbf24', text: '△ KOŞULLU KABUL' },
+    'Kısmi Red': { color: '#f97316', text: '△ KISMİ RED' },
+    'Red': { color: '#f87171', text: '✗ RED EDİLDİ' },
+  };
+  const resultBadge = resultBadgeMap[inspection.overallResult] || resultBadgeMap['Kabul'];
 
   return (
     <div className="anim-fade" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
@@ -185,7 +225,7 @@ export default function InspectionDetail() {
                 </button>
                 <div>
                    <h1 style={{ fontSize: 22, fontWeight: 800, color: '#fff', margin: 0 }}>{inspection.inspectionNo}</h1>
-                   <p style={{ color: '#475569', fontSize: 13, margin: '4px 0 0' }}>{inspection.overallResult === 'Kabul' ? <span style={{ color: '#34d399', fontWeight: 800 }}>✓ KABUL EDİLDİ</span> : <span style={{ color: '#f87171', fontWeight: 800 }}>✗ RED EDİLDİ</span>}</p>
+                   <p style={{ color: '#475569', fontSize: 13, margin: '4px 0 0' }}><span style={{ color: resultBadge.color, fontWeight: 800 }}>{resultBadge.text}</span></p>
                 </div>
              </div>
              <div style={{ display: 'flex', gap: 12 }}>
@@ -224,9 +264,9 @@ export default function InspectionDetail() {
                          </tr>
                       </thead>
                       <tbody>
-                         {inspection.measurements.length === 0 ? (
+                         {measurementRows.length === 0 ? (
                            <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: 13 }}>Kriter seçilmedi veya plan yüklenmedi.</td></tr>
-                         ) : inspection.measurements.map((m, idx) => {
+                         ) : measurementRows.map((m, idx) => {
                             const isCrit = m.isCritical;
                             const isFail = m.result === 'Red';
                             return (
@@ -247,12 +287,16 @@ export default function InspectionDetail() {
                                        onChange={e => updateMeasurement(idx, e.target.value)}
                                      />
                                   </td>
-                                  <td style={{ ...TD, textAlign: 'center' }}>
-                                     <span style={{ 
-                                        fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 4,
-                                        background: m.result === 'Kabul' ? '#065f46' : '#450a0a',
-                                        color: m.result === 'Kabul' ? '#34d399' : '#f87171'
-                                     }}>{m.result?.toUpperCase()}</span>
+                                  <td style={{ ...TD, textAlign: 'center', padding: 4 }}>
+                                     <select
+                                       style={{ ...INPUT_STYLE, height: 32, fontSize: 11, fontWeight: 800, minWidth: 130 }}
+                                       value={m.result || 'Kabul'}
+                                       onChange={(event) => updateMeasurementResult(idx, event.target.value)}
+                                     >
+                                       {QC_RESULT_OPTIONS.map((option) => (
+                                         <option key={option} value={option}>{option}</option>
+                                       ))}
+                                     </select>
                                   </td>
                                </tr>
                             )
@@ -294,6 +338,29 @@ export default function InspectionDetail() {
                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {['Giriş', 'Proses', 'Final', 'İlk Parça'].map(t => (
                               <button key={t} onClick={() => setInspection({...inspection, inspectionType: t})} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, border: 'none', background: inspection.inspectionType === t ? '#dc2626' : '#1e293b', color: inspection.inspectionType === t ? '#fff' : '#94a3b8', cursor: 'pointer' }}>{t}</button>
+                            ))}
+                         </div>
+                      </div>
+                      <div style={{ paddingTop: 12, borderTop: '1px solid #1e293b' }}>
+                         <span style={LABEL_STYLE}>GENEL SONUÇ</span>
+                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {QC_RESULT_OPTIONS.map((status) => (
+                              <button
+                                key={status}
+                                onClick={() => setInspection((prev) => ({ ...prev, overallResult: status }))}
+                                style={{
+                                  padding: '6px 12px',
+                                  borderRadius: 6,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  border: 'none',
+                                  background: inspection.overallResult === status ? '#dc2626' : '#1e293b',
+                                  color: inspection.overallResult === status ? '#fff' : '#94a3b8',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {status}
+                              </button>
                             ))}
                          </div>
                       </div>

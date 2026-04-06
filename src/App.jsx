@@ -42,6 +42,7 @@ import Invoices from './pages/purchasing/Invoices';
 
 // Module 6: Inventory
 import CycleCounts from './pages/inventory/CycleCounts';
+import MaterialControlCenter from './pages/inventory/MaterialControlCenter';
 import Traceability from './pages/inventory/Traceability';
 
 // Module 7: Sales & CRM
@@ -127,6 +128,7 @@ function AppRoutes() {
         <Route path="purchasing/invoices" element={<Invoices />} />
 
         {/* Depo / Stok (New Section for Storage logic) */}
+        <Route path="inventory/material-control" element={<MaterialControlCenter />} />
         <Route path="inventory/cycle-counts" element={<CycleCounts />} />
         <Route path="inventory/traceability" element={<Traceability />} />
 

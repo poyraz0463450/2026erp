@@ -1,14 +1,14 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Spinner, EmptyState } from '../../components/ui/Shared';
 import { 
-  getPurchaseRequests, addPurchaseRequest, updatePurchaseRequest, 
+  getPurchaseRequests, addPurchaseRequest, updatePurchaseRequest,
   getParts, getSupplierParts, addPurchaseOrder 
 } from '../../firebase/firestore';
 import { PR_STATUSES, formatDate, formatNumber } from '../../utils/helpers';
 import { useAuth } from '../../context/AuthContext';
 import { 
   Plus, Search, Filter, ShoppingCart, RefreshCcw, Building2, 
-  ChevronRight, AlertTriangle, Clock, CheckCircle2, User, 
+  ChevronRight, AlertTriangle, Clock, CheckCircle2, User, Pencil, Trash2, 
   BarChart3, Scale, ArrowRight
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -19,6 +19,18 @@ const TH = { background: '#0d1117', color: '#475569', fontSize: 11, fontWeight: 
 const TD = { padding: '0 16px', height: 52, fontSize: 13, color: '#94a3b8', borderBottom: '1px solid #1a2332', verticalAlign: 'middle' };
 const INPUT = { width: '100%', height: 38, padding: '0 12px', background: '#0a0f1e', border: '1px solid #334155', borderRadius: 6, color: '#e2e8f0', fontSize: 13, outline: 'none' };
 const LABEL_STYLE = { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase' };
+const createInitialForm = () => ({
+  prNumber: '',
+  partId: '',
+  requestedQty: 1,
+  urgency: 'Normal',
+  status: 'Taslak',
+  neededByDate: '',
+  suggestedSupplierId: '',
+  notes: '',
+  estimatedUnitPrice: 0,
+  currency: 'TRY'
+});
 
 export default function PurchaseRequests() {
   const { isSatinAlma, isAdmin, userDoc } = useAuth();
@@ -31,11 +43,7 @@ export default function PurchaseRequests() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ 
-    prNumber: '', partId: '', requestedQty: 1, urgency: 'Normal', 
-    status: 'Taslak', neededByDate: '', suggestedSupplierId: '', 
-    notes: '', estimatedUnitPrice: 0, currency: 'TRY' 
-  });
+  const [form, setForm] = useState(createInitialForm());
   const [search, setSearch] = useState('');
 
   useEffect(() => { load(); }, []);
@@ -113,7 +121,28 @@ export default function PurchaseRequests() {
     }
   };
 
-  const filtered = requests.filter(r => 
+  const handleDelete = async () => {
+    if (!editId || !canEdit) return;
+    if (!confirm(`${form.prNumber || 'Talep'} kaydını silmek istediğinize emin misiniz?`)) return;
+    try {
+      await updatePurchaseRequest(editId, {
+        isDeleted: true,
+        status: 'İptal',
+        deletedAt: new Date().toISOString(),
+      });
+      toast.success('Talep arşive alındı');
+      setModal(false);
+      setEditId(null);
+      setForm(createInitialForm());
+      await load();
+    } catch (e) {
+      console.error(e);
+      toast.error('Talep silinemedi');
+    }
+  };
+
+  const activeRequests = requests.filter((r) => !r.isDeleted);
+  const filtered = activeRequests.filter(r => 
     !search || 
     r.prNumber?.toLowerCase().includes(search.toLowerCase()) || 
     r.partName?.toLowerCase().includes(search.toLowerCase())
@@ -129,7 +158,7 @@ export default function PurchaseRequests() {
           <p style={{ color: '#475569', fontSize: 13, marginTop: 4 }}>Bölüm bazlı malzeme talepleri ve onay süreçleri</p>
         </div>
         {canEdit && (
-          <button onClick={() => { setEditId(null); setForm({ prNumber: '', partId: '', requestedQty: 1, urgency: 'Normal', status: 'Taslak', neededByDate: '', suggestedSupplierId: '', notes: '', estimatedUnitPrice: 0, currency: 'TRY' }); setModal(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 20px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)' }}>
+          <button onClick={() => { setEditId(null); setForm(createInitialForm()); setModal(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 20px', background: '#dc2626', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)' }}>
             <Plus size={18} strokeWidth={2.5} /> Yeni Malzeme Talebi
           </button>
         )}
@@ -137,10 +166,10 @@ export default function PurchaseRequests() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
          {[ 
-           { label: 'Bekleyen Onay', val: requests.filter(r=>r.status==='Taslak').length, color: '#fbbf24', icon: <Clock size={16}/> },
-           { label: 'Onaylı Talepler', val: requests.filter(r=>r.status==='Onaylandı').length, color: '#34d399', icon: <CheckCircle2 size={16}/> },
-           { label: 'Acil Requisition', val: requests.filter(r=>r.urgency==='Acil').length, color: '#f87171', icon: <AlertTriangle size={16}/> },
-           { label: 'Siparişleşen', val: requests.filter(r=>r.status==='Siparişe Dönüştü').length, color: '#60a5fa', icon: <ShoppingCart size={16}/> }
+           { label: 'Bekleyen Onay', val: activeRequests.filter(r=>r.status==='Taslak').length, color: '#fbbf24', icon: <Clock size={16}/> },
+           { label: 'Onaylı Talepler', val: activeRequests.filter(r=>r.status==='Onaylandı').length, color: '#34d399', icon: <CheckCircle2 size={16}/> },
+           { label: 'Acil Requisition', val: activeRequests.filter(r=>r.urgency==='Acil').length, color: '#f87171', icon: <AlertTriangle size={16}/> },
+           { label: 'Siparişleşen', val: activeRequests.filter(r=>r.status==='Siparişe Dönüştü').length, color: '#60a5fa', icon: <ShoppingCart size={16}/> }
          ].map((stat, i) => (
            <div key={i} style={{ background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 40, height: 40, borderRadius: 8, background: `${stat.color}15`, color: stat.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stat.icon}</div>
@@ -167,12 +196,12 @@ export default function PurchaseRequests() {
               <th style={TH}>Talep Eden</th>
               <th style={TH}>Termin</th>
               <th style={TH}>Durum</th>
-              <th style={{ ...TH, width: 40 }}></th>
+              <th style={{ ...TH, width: 180, textAlign: 'center' }}>Aksiyon</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? <tr><td colSpan={8} style={{ padding: 48 }}><EmptyState message="Aktif satınalma talebi bulunmuyor." /></td></tr> : filtered.map(r => (
-              <tr key={r.id} onClick={() => { setEditId(r.id); setForm(r); setModal(true); }} style={{ cursor: 'pointer' }} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.02)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            {filtered.length === 0 ? <tr><td colSpan={9} style={{ padding: 48 }}><EmptyState message="Aktif satınalma talebi bulunmuyor." /></td></tr> : filtered.map(r => (
+              <tr key={r.id} onClick={() => { setEditId(r.id); setForm({ ...createInitialForm(), ...r }); setModal(true); }} style={{ cursor: 'pointer' }} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.02)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                 <td style={{ ...TD, fontFamily: 'monospace', fontWeight: 800, color: '#f1f5f9' }}>{r.prNumber}</td>
                 <td style={TD}>
                    <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -202,7 +231,48 @@ export default function PurchaseRequests() {
                       color: r.status === 'Onaylandı' ? '#34d399' : (r.status === 'Taslak' ? '#94a3b8' : '#60a5fa')
                    }}>{r.status?.toUpperCase()}</span>
                 </td>
-                <td style={TD}><ArrowRight size={16} color="#334155" /></td>
+                <td style={{ ...TD, textAlign: 'center' }}>
+                  <div style={{ display: 'inline-flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setEditId(r.id);
+                        setForm({ ...createInitialForm(), ...r });
+                        setModal(true);
+                      }}
+                      style={{ height: 28, padding: '0 10px', border: 'none', borderRadius: 6, background: '#1e40af', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                    >
+                      <Pencil size={12} />
+                      Düzenle
+                    </button>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        onClick={async (event) => {
+                          event.stopPropagation();
+                          if (!confirm(`${r.prNumber || 'Talep'} kaydını silmek istiyor musunuz?`)) return;
+                          try {
+                            await updatePurchaseRequest(r.id, {
+                              isDeleted: true,
+                              status: 'İptal',
+                              deletedAt: new Date().toISOString(),
+                            });
+                            toast.success('Talep arşive alındı');
+                            await load();
+                          } catch (error) {
+                            console.error(error);
+                            toast.error('Talep silinemedi');
+                          }
+                        }}
+                        style={{ height: 28, padding: '0 10px', border: 'none', borderRadius: 6, background: '#7f1d1d', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                      >
+                        <Trash2 size={12} />
+                        Sil
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -270,6 +340,15 @@ export default function PurchaseRequests() {
                        <Scale size={16}/> Teklif Topla (RFQ)
                     </button>
                  </div>
+               )}
+               {editId && canEdit && (
+                 <button
+                   type="button"
+                   onClick={handleDelete}
+                   style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 20px', background: '#7f1d1d', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                 >
+                   Talebi Sil
+                 </button>
                )}
               <div style={{ display: 'flex', gap: 12, marginLeft: 'auto' }}>
                  <button type="button" onClick={() => setModal(false)} style={{ height: 40, padding: '0 24px', background: 'transparent', border: '1px solid #334155', borderRadius: 8, color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>İptal</button>

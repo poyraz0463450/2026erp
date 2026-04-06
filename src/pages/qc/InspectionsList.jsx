@@ -16,6 +16,12 @@ import { formatDateOnly } from '../../utils/helpers';
 const TH = { background: '#0d1117', color: '#475569', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 16px', textAlign: 'left', borderBottom: '2px solid #1e3a5f', whiteSpace: 'nowrap' };
 const TD = { padding: '0 16px', height: 52, fontSize: 13, color: '#94a3b8', borderBottom: '1px solid #1a2332', verticalAlign: 'middle' };
 const INPUT = { width: '100%', height: 38, padding: '0 12px', background: '#0a0f1e', border: '1px solid #334155', borderRadius: 6, color: '#e2e8f0', fontSize: 13, outline: 'none' };
+const RESULT_STYLE = {
+  'Kabul': { bg: '#065f46', color: '#34d399' },
+  'Koşullu Kabul': { bg: '#78350f', color: '#fbbf24' },
+  'Kısmi Red': { bg: '#7c2d12', color: '#fb923c' },
+  'Red': { bg: '#450a0a', color: '#f87171' },
+};
 
 export default function InspectionsList() {
   const { isAdmin, isKalite } = useAuth();
@@ -118,7 +124,7 @@ export default function InspectionsList() {
             {activeTab === 'completed' ? (
               filtered.length === 0 ? <tr><td colSpan={8} style={{ padding: 48 }}><EmptyState message="Muayene kaydı bulunamadı." /></td></tr> : filtered.map(ins => {
                 const p = parts.find(x => x.id === ins.partId);
-                const isOk = ins.overallResult === 'Kabul';
+                const style = RESULT_STYLE[ins.overallResult] || RESULT_STYLE.Red;
                 return (
                   <tr key={ins.id} onClick={() => navigate(`/qc/inspections/${ins.id}`)} style={{ cursor: 'pointer' }} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.02)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                     <td style={{ ...TD, fontFamily: 'monospace', fontWeight: 800, color: '#f1f5f9' }}>{ins.inspectionNo || ins.id.slice(0,8).toUpperCase()}</td>
@@ -150,8 +156,8 @@ export default function InspectionsList() {
                       </div>
                     </td>
                     <td style={{ ...TD, textAlign: 'center' }}>
-                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, background: isOk ? '#065f46' : '#450a0a', color: isOk ? '#34d399' : '#f87171', fontSize: 11, fontWeight: 800 }}>
-                          {isOk ? <CheckCircle2 size={12}/> : <AlertTriangle size={12}/>}
+                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, background: style.bg, color: style.color, fontSize: 11, fontWeight: 800 }}>
+                          {ins.overallResult === 'Kabul' ? <CheckCircle2 size={12}/> : <AlertTriangle size={12}/>}
                           {ins.overallResult?.toUpperCase()}
                        </div>
                     </td>

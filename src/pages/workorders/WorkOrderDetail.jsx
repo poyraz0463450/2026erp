@@ -13,7 +13,7 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   ChevronLeft, Save, Play, CheckCircle2, AlertTriangle, 
   Clock, Settings, ClipboardList, Layers, ShieldCheck, 
-  FileText, Users, Cpu, MoreVertical, Plus, Trash2, ArrowRight
+  FileText, Users, Cpu, MoreVertical, Plus, Trash2, ArrowRight, ChevronRight, Download
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -27,6 +27,9 @@ const TAB_STYLE = (active) => ({
 const CARD_STYLE = { background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, padding: 20, marginBottom: 16 };
 const LABEL_STYLE = { display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 6, textTransform: 'uppercase' };
 const INPUT_STYLE = { width: '100%', height: 38, padding: '0 12px', background: '#0a0f1e', border: '1px solid #334155', borderRadius: 6, color: '#e2e8f0', fontSize: 13, outline: 'none' };
+const TH = { background: '#0d1117', color: '#475569', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', padding: '12px 14px', borderBottom: '2px solid #1e3a5f', textAlign: 'left' };
+const TD = { padding: '12px 14px', fontSize: 13, color: '#94a3b8', borderBottom: '1px solid #1a2332', verticalAlign: 'middle' };
+const toRows = (snapshot) => (snapshot?.docs || []).map((doc) => ({ id: doc.id, ...doc.data() }));
 
 export default function WorkOrderDetail() {
   const { id } = useParams();
@@ -59,14 +62,25 @@ export default function WorkOrderDetail() {
       }
       setOrder({ id: doc.id, ...doc.data() });
 
-      const [c, p, qc, d, logs] = await Promise.all([
-        getWorkCenters(), getParts(), getQcInspections(), getDocuments(), getWorkLogs(id)
+      const loadSafe = async (fn) => {
+        try {
+          return toRows(await fn());
+        } catch {
+          return [];
+        }
+      };
+      const [centerRows, partRows, qcRows, docRows, logRows] = await Promise.all([
+        loadSafe(getWorkCenters),
+        loadSafe(getParts),
+        loadSafe(getQcInspections),
+        loadSafe(getDocuments),
+        loadSafe(() => getWorkLogs(id)),
       ]);
-      setCenters(c.docs.map(x => ({ id: x.id, ...x.data() })));
-      setAllParts(p.docs.map(x => ({ id: x.id, ...x.data() })));
-      setInspections(qc.docs.map(x => ({ id: x.id, ...x.data() })).filter(x => x.workOrderId === id));
-      setDocs(d.docs.map(x => ({ id: x.id, ...x.data() })).filter(x => x.linkedPartId === doc.data().productPartId));
-      setWorkLogs(logs.docs.map(x => ({ id: x.id, ...x.data() })));
+      setCenters(centerRows);
+      setAllParts(partRows);
+      setInspections(qcRows.filter((row) => row.workOrderId === id));
+      setDocs(docRows.filter((row) => row.linkedPartId === doc.data().productPartId));
+      setWorkLogs(logRows);
     } catch (e) {
       toast.error('Veriler yüklenemedi');
     } finally {
@@ -137,7 +151,10 @@ export default function WorkOrderDetail() {
        for (const comp of order.components) {
           const needed = comp.qty * order.quantity;
           const res = await getBatchesByPart(comp.partId);
-          const batches = res.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> new Date(a.receivedDate) - new Date(b.receivedDate));
+          const batches = res.docs
+            .map(d=>({id:d.id, ...d.data()}))
+            .filter((batch) => ['Sağlam', 'Kabul', 'Released', undefined, ''].includes(batch.qcStatus))
+            .sort((a,b)=> new Date(a.receivedDate) - new Date(b.receivedDate));
           
           let remainingToDeduct = needed;
           for (const batch of batches) {
@@ -145,6 +162,9 @@ export default function WorkOrderDetail() {
              const take = Math.min(batch.remainingQty, remainingToDeduct);
              await updateInventoryBatch(batch.id, { remainingQty: batch.remainingQty - take });
              remainingToDeduct -= take;
+          }
+          if (remainingToDeduct > 0) {
+             throw new Error(`${comp.partNumber || comp.name} için QC onaylı stok yetersiz`);
           }
           // Update master part stock
           const p = allParts.find(x => x.id === comp.partId);

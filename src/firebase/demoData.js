@@ -1,4 +1,4 @@
-import { doc, writeBatch } from 'firebase/firestore';
+﻿import { doc, writeBatch } from 'firebase/firestore';
 import { db } from './config';
 
 const BASE = new Date(Date.UTC(2026, 2, 1, 8, 0, 0));
@@ -38,6 +38,7 @@ export async function seedDemoData({ currentUserName = 'Sistem Yöneticisi', cur
     ['model_art9_tac', 'ART9-TAC', 'ART-9 Tactical Tabanca', true],
     ['model_art9_cmp', 'ART9-CMP', 'ART-9 Compact Tabanca', true],
     ['model_art9_trn', 'ART9-TRN', 'ART-9 Eğitim Kiti', false],
+    ['model_art9_sd', 'ART9-SD', 'ART-9 Service Tabanca', true],
   ].map((row, index) => ({
     id: row[0],
     modelCode: row[1],
@@ -114,6 +115,7 @@ export async function seedDemoData({ currentUserName = 'Sistem Yöneticisi', cur
     ['part_product_tac', 'PRD-ART9-TAC', 'ART-9 Tactical Tabanca'],
     ['part_product_cmp', 'PRD-ART9-CMP', 'ART-9 Compact Tabanca'],
     ['part_product_trn', 'PRD-ART9-TRN', 'ART-9 Eğitim Kiti'],
+    ['part_product_sd', 'PRD-ART9-SD', 'ART-9 Service Tabanca'],
   ];
 
   const usageDefs = {
@@ -121,6 +123,15 @@ export async function seedDemoData({ currentUserName = 'Sistem Yöneticisi', cur
     model_art9_tac: [['part_assy_lower', 1], ['part_assy_slide', 1], ['part_assy_mag', 3], ['part_barrel_tac', 1], ['part_selector', 1], ['part_recoil_guide', 1], ['part_recoil_spring', 1], ['part_product_tac', 1]],
     model_art9_cmp: [['part_assy_lower', 1], ['part_slide_cmp', 1], ['part_assy_mag', 2], ['part_barrel_std', 1], ['part_recoil_guide', 1], ['part_recoil_spring', 1], ['part_product_cmp', 1]],
     model_art9_trn: [['part_assy_lower', 1], ['part_assy_slide', 1], ['part_assy_mag', 2], ['part_feed_insert', 1], ['part_product_trn', 1]],
+    model_art9_sd: [['part_assy_lower', 1], ['part_assy_slide', 1], ['part_assy_mag', 2], ['part_barrel_std', 1], ['part_recoil_guide', 1], ['part_recoil_spring', 1], ['part_product_sd', 1]],
+  };
+
+  const productToModelMap = {
+    part_product_g2: 'model_art9_g2',
+    part_product_tac: 'model_art9_tac',
+    part_product_cmp: 'model_art9_cmp',
+    part_product_trn: 'model_art9_trn',
+    part_product_sd: 'model_art9_sd',
   };
 
   const bomDefs = {
@@ -134,6 +145,7 @@ export async function seedDemoData({ currentUserName = 'Sistem Yöneticisi', cur
     part_product_tac: [['part_assy_lower', 1], ['part_assy_slide', 1], ['part_barrel_tac', 1], ['part_recoil_guide', 1], ['part_recoil_spring', 1], ['part_assy_mag', 3], ['part_selector', 1]],
     part_product_cmp: [['part_assy_lower', 1], ['part_slide_cmp', 1], ['part_barrel_std', 1], ['part_recoil_guide', 1], ['part_recoil_spring', 1], ['part_assy_mag', 2]],
     part_product_trn: [['part_assy_lower', 1], ['part_assy_slide', 1], ['part_assy_mag', 2], ['part_feed_insert', 1]],
+    part_product_sd: [['part_assy_lower', 1], ['part_assy_slide', 1], ['part_barrel_std', 1], ['part_recoil_guide', 1], ['part_recoil_spring', 1], ['part_assy_mag', 2]],
   };
 
   const usageByPart = {};
@@ -189,8 +201,8 @@ export async function seedDemoData({ currentUserName = 'Sistem Yöneticisi', cur
   const parts = [
     ...rawDefs.map((row, index) => makePart({ id: row[0], partNumber: row[1], name: row[2], category: 'Hammadde', subCategory: row[3], material: row[4], unit: row[5], type: 'Raw Material', isAssembly: false, isCritical: false }, index)),
     ...componentDefs.map((row, index) => makePart({ id: row[0], partNumber: row[1], name: row[2], category: 'Parça', subCategory: row[3], material: row[4], unit: 'Adet', type: 'Component', isAssembly: false, isCritical: Boolean(row[5]) }, index + 20)),
-    ...assemblyDefs.map((row, index) => makePart({ id: row[0], partNumber: row[1], name: row[2], category: 'Parça', subCategory: 'Montaj', material: 'Çoklu', unit: 'Adet', type: 'Assembly', isAssembly: true, isCritical: true }, index + 60)),
-    ...productDefs.map((row, index) => makePart({ id: row[0], partNumber: row[1], name: row[2], category: 'Parça', subCategory: 'Mamül', material: 'Çoklu', unit: 'Adet', type: 'Product', isAssembly: true, isCritical: true }, index + 80)),
+    ...assemblyDefs.map((row, index) => makePart({ id: row[0], partNumber: row[1], name: row[2], category: 'Montaj', subCategory: 'Montaj', material: 'Çoklu', unit: 'Adet', type: 'Assembly', isAssembly: true, isCritical: true }, index + 60)),
+    ...productDefs.map((row, index) => makePart({ id: row[0], partNumber: row[1], name: row[2], category: 'Mamul', subCategory: 'Mamül', material: 'Çoklu', unit: 'Adet', type: 'Product', isAssembly: true, isCritical: true }, index + 80)),
   ];
 
   const partById = mapById(parts);
@@ -627,6 +639,7 @@ export async function seedDemoData({ currentUserName = 'Sistem Yöneticisi', cur
     ['sales_order_002', 'SO-2026-0002', 'customer_002', 'part_product_tac', 8, 4220, 'USD', 'In Production'],
     ['sales_order_003', 'SO-2026-0003', 'customer_003', 'part_product_cmp', 6, 3390, 'EUR', 'Confirmed'],
     ['sales_order_004', 'SO-2026-0004', 'customer_004', 'part_product_g2', 4, 3925, 'USD', 'Shipped'],
+    ['sales_order_005', 'SO-2026-0005', 'customer_002', 'part_product_sd', 15, 3610, 'USD', 'Confirmed'],
   ].map((row, index) => ({
     id: row[0],
     soNumber: row[1],
@@ -748,32 +761,19 @@ export async function seedDemoData({ currentUserName = 'Sistem Yöneticisi', cur
   writeDocs('suppliers', suppliers);
   writeDocs('models', models);
   writeDocs('parts', withComponents);
-  writeDocs('supplier_parts', supplierParts);
   writeDocs('purchase_requests', purchaseRequests);
   writeDocs('purchase_orders', purchaseOrders);
-  writeDocs('asn', asn);
-  writeDocs('rfq', rfq);
   writeDocs('goods_receipts', goodsReceipts);
-  writeDocs('inventory_batches', inventoryBatches);
+  writeDocs('inventory_lots', inventoryBatches);
   writeDocs('stock_movements', stockMovements);
-  writeDocs('inspection_plans', inspectionPlans);
-  writeDocs('qc_inspections', qcInspections);
-  writeDocs('ncr_records', ncrRecords);
-  writeDocs('work_centers', workCenters);
-  writeDocs('machines', machines);
-  writeDocs('work_orders', workOrders);
-  writeDocs('work_logs', workLogs);
-  writeDocs('documents', documents);
+  writeDocs('quality_plans', inspectionPlans);
+  writeDocs('quality_records', qcInspections);
+  writeDocs('nonconformities', ncrRecords);
+  writeDocs('production_orders', workOrders);
+  writeDocs('production_logs', workLogs);
   writeDocs('customers', customers);
   writeDocs('sales_orders', salesOrders);
   writeDocs('shipments', shipments);
-  writeDocs('cycle_counts', cycleCounts);
-  writeDocs('measuring_tools', measuringTools);
-  writeDocs('sales_invoices', salesInvoices);
-  writeDocs('price_history', priceHistory);
-  writeDocs('logs', logs);
-
-  batch.set(doc(db, 'settings', 'financials'), { defaultCurrency: 'TRY', vatRate: 20, updatedAt: at(35, 13) }, { merge: true });
 
   const summary = {
     version: 'demo-v1',
@@ -793,7 +793,8 @@ export async function seedDemoData({ currentUserName = 'Sistem Yöneticisi', cur
     updatedAt: at(35, 14),
   };
 
-  batch.set(doc(db, 'settings', 'demo_seed'), summary, { merge: true });
   await batch.commit();
   return summary;
 }
+
+

@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed:demo": "node scripts/seed-demo-firestore.mjs",
+    "test:material-planning": "node scripts/verify-material-planning.mjs",
+    "test:order-flow": "node scripts/verify-order-flow.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

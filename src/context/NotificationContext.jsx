@@ -1,6 +1,11 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import {
+  getCollection,
+  getInventoryBatches,
+  getNcrRecords,
+  getParts,
+  getPurchaseOrders,
+} from '../firebase/firestore';
 
 const NotificationContext = createContext();
 
@@ -15,52 +20,50 @@ export function NotificationProvider({ children }) {
   });
 
   useEffect(() => {
-    const unsubQC = onSnapshot(collection(db, 'inventory_batches'), (snap) => {
-      const pendingQC = snap.docs.filter((doc) => doc.data().status === 'Karantina').length;
-      setCounts((prev) => ({ ...prev, pendingQC }));
-    });
+    let active = true;
 
-    const unsubPO = onSnapshot(collection(db, 'purchase_orders'), (snap) => {
-      const today = new Date().toISOString().split('T')[0];
-      let pendingGRN = 0;
-      let delayedPO = 0;
+    const loadCounts = async () => {
+      try {
+        const [batchSnap, poSnap, partSnap, ncrSnap, toolSnap] = await Promise.all([
+          getInventoryBatches(),
+          getPurchaseOrders(),
+          getParts(),
+          getNcrRecords(),
+          getCollection('measuring_tools'),
+        ]);
 
-      snap.forEach((doc) => {
-        const data = doc.data();
-        if (['Gönderildi', 'Kısmi Teslim'].includes(data.status)) {
-          pendingGRN += 1;
-          if (data.expectedDeliveryDate && data.expectedDeliveryDate < today) delayedPO += 1;
-        }
-      });
+        if (!active) return;
 
-      setCounts((prev) => ({ ...prev, pendingGRN, delayedPO }));
-    });
+        const batchRows = batchSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const poRows = poSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const partRows = partSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const ncrRows = ncrSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const toolRows = toolSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const today = new Date().toISOString().split('T')[0];
 
-    const unsubParts = onSnapshot(collection(db, 'parts'), (snap) => {
-      const criticalStock = snap.docs.filter((doc) => {
-        const data = doc.data();
-        return (data.reorderPoint || 0) > 0 && (data.currentStock || 0) <= data.reorderPoint;
-      }).length;
+        setCounts({
+          pendingQC: batchRows.filter((row) => row.status === 'Karantina' || row.qcStatus === 'Karantina').length,
+          pendingGRN: poRows.filter((row) => ['Gönderildi', 'Kısmi Teslim'].includes(row.status)).length,
+          delayedPO: poRows.filter((row) => ['Gönderildi', 'Kısmi Teslim'].includes(row.status) && row.expectedDeliveryDate && row.expectedDeliveryDate < today).length,
+          criticalStock: partRows.filter((row) => {
+            const threshold = row.reorderPoint || row.minStock || 0;
+            const availableStock = Math.max((row.currentStock || 0) - (row.reservedStock || 0), 0);
+            return threshold > 0 && availableStock <= threshold;
+          }).length,
+          openNCR: ncrRows.filter((row) => ['Açık', 'Yeni', 'İncelemede'].includes(row.status)).length,
+          expiredCalibration: toolRows.filter((row) => row.status === 'Süresi Dolmuş').length,
+        });
+      } catch (error) {
+        console.error('Notification load error:', error);
+      }
+    };
 
-      setCounts((prev) => ({ ...prev, criticalStock }));
-    });
-
-    const unsubNCR = onSnapshot(collection(db, 'ncr_records'), (snap) => {
-      const openNCR = snap.docs.filter((doc) => doc.data().status === 'Açık').length;
-      setCounts((prev) => ({ ...prev, openNCR }));
-    });
-
-    const unsubCal = onSnapshot(collection(db, 'measuring_tools'), (snap) => {
-      const expiredCalibration = snap.docs.filter((doc) => doc.data().status === 'Süresi Dolmuş').length;
-      setCounts((prev) => ({ ...prev, expiredCalibration }));
-    });
+    loadCounts();
+    const intervalId = window.setInterval(loadCounts, 15000);
 
     return () => {
-      unsubQC();
-      unsubPO();
-      unsubParts();
-      unsubNCR();
-      unsubCal();
+      active = false;
+      window.clearInterval(intervalId);
     };
   }, []);
 

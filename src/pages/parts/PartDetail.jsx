@@ -32,7 +32,15 @@ import {
   getSupplierParts,
   updatePart,
 } from '../../firebase/firestore';
-import { formatCurrency, formatDate, formatDateOnly, formatNumber } from '../../utils/helpers';
+import {
+  DOMAIN_PART_CATEGORIES,
+  DOMAIN_PART_SUBCATEGORY_OPTIONS_BY_CATEGORY,
+  DOMAIN_PART_UNITS,
+  formatCurrency,
+  formatDate,
+  formatDateOnly,
+  formatNumber,
+} from '../../utils/helpers';
 import { generateLotNumber } from '../../utils/autoGen';
 
 const TABS = [
@@ -57,7 +65,8 @@ const emptyPart = () => ({
   partNumber: '',
   name: '',
   category: 'Parça',
-  subCategory: '',
+  subCategory: '4140 Çelik',
+  subCategoryOther: '',
   unit: 'Adet',
   revision: 'A',
   revisionStatus: 'Aktif',
@@ -145,6 +154,20 @@ export default function PartDetail() {
   const [lotForm, setLotForm] = useState({ lotNumber: '', quantity: 1, location: '', qcStatus: 'Karantina', referenceNumber: '', note: '', sourceType: 'Stok Açılışı', receivedDate: new Date().toISOString().split('T')[0] });
 
   const nextLotPreview = useMemo(() => buildLocalLotNumber(allBatches), [allBatches]);
+  const availableSubCategories = useMemo(
+    () => DOMAIN_PART_SUBCATEGORY_OPTIONS_BY_CATEGORY[part.category] || DOMAIN_PART_SUBCATEGORY_OPTIONS_BY_CATEGORY.Parça,
+    [part.category]
+  );
+  const hasTechnicalPdf = useMemo(
+    () =>
+      docs.some(
+        (doc) =>
+          doc.linkedPartId === id &&
+          doc.category === 'Teknik Resim' &&
+          String(doc.fileName || '').toLowerCase().endsWith('.pdf')
+      ),
+    [docs, id]
+  );
   const modelUsageRows = useMemo(() => (part.usedInModels || []).map((usage) => {
     const modelDoc = models.find((model) => model.id === usage.modelId);
     return { ...usage, modelName: usage.modelName || modelDoc?.modelName || '-', modelCode: usage.modelCode || modelDoc?.modelCode || '-', isActive: modelDoc?.isActive ?? true };
@@ -179,8 +202,14 @@ export default function PartDetail() {
           navigate('/parts');
           return;
         }
-
-        const currentPart = { ...emptyPart(), id: partDoc.id, ...partDoc.data(), usedInModels: partDoc.data().usedInModels || [], components: partDoc.data().components || [] };
+        const rawPart = { ...emptyPart(), id: partDoc.id, ...partDoc.data(), usedInModels: partDoc.data().usedInModels || [], components: partDoc.data().components || [] };
+        const validOptions =
+          DOMAIN_PART_SUBCATEGORY_OPTIONS_BY_CATEGORY[rawPart.category] ||
+          DOMAIN_PART_SUBCATEGORY_OPTIONS_BY_CATEGORY.Parça;
+        const currentPart =
+          rawPart.subCategory && !validOptions.includes(rawPart.subCategory)
+            ? { ...rawPart, subCategoryOther: rawPart.subCategory, subCategory: 'Diğer' }
+            : rawPart;
         setPart(currentPart);
         setBatches(sortByLatest(batchRows.filter((item) => item.partId === id), 'receivedDate', 'createdAt'));
         setMovements(sortByLatest(movementRows.filter((item) => item.partId === id), 'createdAt').slice(0, 50));
@@ -198,12 +227,47 @@ export default function PartDetail() {
     load();
   }, [id, navigate]);
 
-  const handleFieldChange = (field, value) => setPart((prev) => ({ ...prev, [field]: value }));
+  const handleFieldChange = (field, value) =>
+    setPart((prev) => {
+      if (field === 'category') {
+        const nextSubCategories = DOMAIN_PART_SUBCATEGORY_OPTIONS_BY_CATEGORY[value] || [];
+        const nextSubCategory = nextSubCategories.includes(prev.subCategory) ? prev.subCategory : nextSubCategories[0] || '';
+        return {
+          ...prev,
+          category: value,
+          subCategory: nextSubCategory,
+          subCategoryOther: nextSubCategory === 'Diğer' ? prev.subCategoryOther : '',
+          isAssembly: value === 'Montaj' || value === 'Mamul' ? true : prev.isAssembly,
+        };
+      }
+
+      if (field === 'subCategory') {
+        return {
+          ...prev,
+          subCategory: value,
+          subCategoryOther: value === 'Diğer' ? prev.subCategoryOther : '',
+        };
+      }
+
+      return { ...prev, [field]: value };
+    });
 
   const save = async () => {
     if (!canEdit) return;
     if (!part.partNumber?.trim() || !part.name?.trim()) {
       toast.error('Parça numarası ve parça adı zorunludur');
+      return;
+    }
+    if (!part.category || !part.subCategory || !part.unit) {
+      toast.error('Kategori, alt kategori ve birim seçimi zorunludur');
+      return;
+    }
+    if (part.subCategory === 'Diğer' && !part.subCategoryOther?.trim()) {
+      toast.error('Alt kategoride Diğer seçildiyse manuel açıklama zorunludur');
+      return;
+    }
+    if (id === 'new' && Number(part.currentStock || 0) > 0) {
+      toast.error('Teknik PDF bağlanmadan başlangıç stoğu açılamaz. Önce parça kartını kaydedin, sonra doküman ekleyin.');
       return;
     }
 
@@ -214,6 +278,7 @@ export default function PartDetail() {
         ...rest,
         partNumber: part.partNumber.trim(),
         name: part.name.trim(),
+        subCategory: part.subCategory === 'Diğer' ? part.subCategoryOther.trim() : part.subCategory,
         minStock: Number(part.minStock || 0),
         currentStock: Number(part.currentStock || 0),
         reservedStock: Number(part.reservedStock || 0),
@@ -369,6 +434,10 @@ export default function PartDetail() {
   };
 
   const openLotEntry = async () => {
+    if (!hasTechnicalPdf) {
+      toast.error('Teknik resim PDF olmadan lot girişi yapılamaz');
+      return;
+    }
     const generatedLot = await assignAutomaticLot();
     setLotForm({
       lotNumber: generatedLot,
@@ -385,6 +454,10 @@ export default function PartDetail() {
 
   const handleCreateLot = async () => {
     if (!canManageStock || id === 'new') return;
+    if (!hasTechnicalPdf) {
+      toast.error('Teknik resim PDF olmadan stok / lot girişi yapılamaz');
+      return;
+    }
 
     const quantity = Number(lotForm.quantity || 0);
     if (!lotForm.lotNumber?.trim()) {
@@ -495,19 +568,45 @@ export default function PartDetail() {
             </div>
             <div>
               <label style={label}>Kategori</label>
-              <input style={input} value={part.category || ''} disabled={!canEdit} onChange={(event) => handleFieldChange('category', event.target.value)} />
+              <select style={input} value={part.category || ''} disabled={!canEdit} onChange={(event) => handleFieldChange('category', event.target.value)}>
+                {DOMAIN_PART_CATEGORIES.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
             </div>
             <div>
               <label style={label}>Alt Kategori</label>
-              <input style={input} value={part.subCategory || ''} disabled={!canEdit} onChange={(event) => handleFieldChange('subCategory', event.target.value)} />
+              <select style={input} value={part.subCategory || ''} disabled={!canEdit} onChange={(event) => handleFieldChange('subCategory', event.target.value)}>
+                {availableSubCategories.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
             </div>
+            {part.subCategory === 'Diğer' ? (
+              <div>
+                <label style={label}>Diğer Açıklaması</label>
+                <input
+                  style={input}
+                  value={part.subCategoryOther || ''}
+                  disabled={!canEdit}
+                  onChange={(event) => handleFieldChange('subCategoryOther', event.target.value)}
+                  placeholder="Manuel alt kategori / malzeme tipi giriniz"
+                />
+              </div>
+            ) : null}
             <div>
               <label style={label}>Birim</label>
-              <input style={input} value={part.unit || ''} disabled={!canEdit} onChange={(event) => handleFieldChange('unit', event.target.value)} />
+              <select style={input} value={part.unit || ''} disabled={!canEdit} onChange={(event) => handleFieldChange('unit', event.target.value)}>
+                {DOMAIN_PART_UNITS.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
             </div>
             <div>
               <label style={label}>Varsayılan Lokasyon</label>
               <input style={input} value={part.warehouseLocation || ''} disabled={!canEdit} onChange={(event) => handleFieldChange('warehouseLocation', event.target.value)} />
+            </div>
+            <div>
+              <label style={label}>{id === 'new' ? 'Başlangıç Stoğu' : 'Fiili Stok'}</label>
+              <input type="number" min="0" style={input} value={part.currentStock || 0} disabled={!canEdit} onChange={(event) => handleFieldChange('currentStock', Number(event.target.value))} />
+            </div>
+            <div>
+              <label style={label}>Rezerve Stok</label>
+              <input type="number" min="0" style={input} value={part.reservedStock || 0} disabled={!canEdit} onChange={(event) => handleFieldChange('reservedStock', Number(event.target.value))} />
             </div>
             <div>
               <label style={label}>Kritik Stok</label>
@@ -998,10 +1097,15 @@ export default function PartDetail() {
                 {(part.usedInModels?.length || 0) > 1 ? <Badge text="ORTAK PARÇA" tone="warning" /> : null}
               </div>
               <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 13 }}>{part.name || 'Parça tanımı oluşturuluyor'}</p>
+              {!hasTechnicalPdf && id !== 'new' ? (
+                <p style={{ margin: '8px 0 0', color: '#f87171', fontSize: 12, fontWeight: 700 }}>
+                  Teknik resim PDF bağlı değil. Bu parça için lot / stok girişi kapalı.
+                </p>
+              ) : null}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {canManageStock && id !== 'new' ? <button onClick={openLotEntry} style={{ ...actionButton, background: '#0f172a', border: '1px solid #1e293b', color: '#e2e8f0' }}><Plus size={16} />Lot Girişi</button> : null}
+            {canManageStock && id !== 'new' ? <button onClick={openLotEntry} disabled={!hasTechnicalPdf} style={{ ...actionButton, background: '#0f172a', border: '1px solid #1e293b', color: '#e2e8f0', opacity: hasTechnicalPdf ? 1 : 0.45, cursor: hasTechnicalPdf ? 'pointer' : 'not-allowed' }}><Plus size={16} />Lot Girişi</button> : null}
             {canEdit ? <button onClick={save} disabled={saving} style={{ ...actionButton, background: '#dc2626', color: '#fff', boxShadow: '0 10px 24px rgba(220, 38, 38, 0.18)', opacity: saving ? 0.7 : 1 }}><Save size={16} />{saving ? 'Kaydediliyor' : 'Kaydet'}</button> : null}
           </div>
         </div>

@@ -1,4 +1,4 @@
-// ── UTILS ────────────────────────────────────────────────────────────────────
+﻿// ── UTILS ────────────────────────────────────────────────────────────────────
 
 import { serverTimestamp } from 'firebase/firestore';
 
@@ -43,6 +43,17 @@ export const PART_SUB_CATEGORIES = [
 ];
 
 export const PART_UNITS = ['Adet', 'Kg', 'Metre', 'mm', 'Takım', 'Litre'];
+
+export const DOMAIN_PART_CATEGORIES = ['Hammadde', 'Parça', 'Montaj', 'Mamul'];
+
+export const DOMAIN_PART_SUBCATEGORY_OPTIONS_BY_CATEGORY = {
+  Hammadde: ['4140 Çelik', '4340 Çelik', 'Otomat Çeliği', 'Paslanmaz Çelik', 'Alüminyum', 'Zamak 2', 'Polimer', 'Yay', 'Standart Malzeme', 'Diğer'],
+  Parça: ['4140 Çelik', '4340 Çelik', 'Otomat Çeliği', 'Paslanmaz Çelik', 'Alüminyum', 'Zamak 2', 'Polimer', 'Yay', 'Pim', 'Vida', 'Dövme Parça', 'Döküm Parça', 'Standart Malzeme', 'Diğer'],
+  Montaj: ['Montaj', 'Standart Malzeme', 'Diğer'],
+  Mamul: ['Mamul', 'Montaj', 'Diğer'],
+};
+
+export const DOMAIN_PART_UNITS = ['Adet', 'Kg', 'Metre', 'mm', 'Takım', 'Litre'];
 
 export const REVISION_STATUSES = ['Aktif', 'Pasif', 'Prototip', 'Üretimden Kalktı'];
 
@@ -145,3 +156,4 @@ export function getAQLSampling(lotSize, aql = 1.0) {
     re
   };
 }
+

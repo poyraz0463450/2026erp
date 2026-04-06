@@ -44,8 +44,10 @@ export default function Dashboard() {
       const pendingQc = parts.filter(p => p.stockStatus === 'Karantina');
       const activePR = prs.filter(p => p.status !== 'Teslim Alındı');
 
-      const invoices = invS.docs.map(d => ({ id: d.id, ...d.data() }));
-      const totalRevenue = invoices.reduce((acc, inv) => acc + (inv.totalAmount || 0), 0);
+      const invoices = invS.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(inv => inv.invoiceKind !== 'purchase' && inv.customerName);
+      const totalRevenue = invoices.reduce((acc, inv) => acc + (inv.totalAmount || inv.amount || 0), 0);
       
       // Basic COGS calculation (simplified for dashboard)
       const totalCOGS = totalRevenue * 0.65; // Placeholder: Real ERP would aggregate actual batch costs

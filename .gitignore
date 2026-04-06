@@ -33,3 +33,8 @@ dist-ssr
 
 # Vite cache
 .vite/
+
+# Local temp / generated files
+.tmp_hatalar.zip
+.tmp_hatalar/
+scripts/.generated-demoData.mjs

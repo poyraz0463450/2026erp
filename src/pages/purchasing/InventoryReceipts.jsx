@@ -1,172 +1,250 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Spinner, EmptyState } from '../../components/ui/Shared';
-import { 
-  getPurchaseOrders, updatePurchaseOrder, addGoodsReceipt, 
-  getParts, updatePart, addStockMovement, addInventoryBatch
-} from '../../firebase/firestore';
-import { formatNumber, formatDate } from '../../utils/helpers';
-import { 
-  Truck, Search, ChevronLeft, Save, Plus, Trash2, 
-  ArrowRight, ShieldCheck, ClipboardCheck, Package, 
-  MapPin, Hash, CheckCircle2, AlertCircle
-} from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { Spinner, EmptyState } from '../../components/ui/Shared';
+import {
+  addGoodsReceipt,
+  addInventoryBatch,
+  addStockMovement,
+  getDocuments,
+  getParts,
+  getPurchaseOrders,
+  updatePart,
+  updatePurchaseOrder,
+} from '../../firebase/firestore';
+import { generateLotNumber } from '../../utils/autoGen';
+import { formatDate } from '../../utils/helpers';
+import {
+  ChevronLeft,
+  Hash,
+  Package,
+  ShieldCheck,
+  Truck,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 
+const INPUT = { width: '100%', height: 38, padding: '0 12px', background: '#0a0f1e', border: '1px solid #334155', borderRadius: 6, color: '#e2e8f0', fontSize: 13, outline: 'none' };
 const TH = { background: '#0d1117', color: '#475569', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 16px', textAlign: 'left', borderBottom: '2px solid #1e3a5f', whiteSpace: 'nowrap' };
 const TD = { padding: '0 16px', height: 52, fontSize: 13, color: '#94a3b8', borderBottom: '1px solid #1a2332', verticalAlign: 'middle' };
-const INPUT = { width: '100%', height: 38, padding: '0 12px', background: '#0a0f1e', border: '1px solid #334155', borderRadius: 6, color: '#e2e8f0', fontSize: 13, outline: 'none' };
-const LABEL_STYLE = { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase' };
+const LABEL = { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase' };
+
+const buildReceiptNumber = () => `GRN-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
+const previewLot = (index) => {
+  const now = new Date();
+  return `LOT-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(index + 1).padStart(3, '0')}`;
+};
 
 export default function InventoryReceipts() {
-  const { userDoc, isSatinAlma, isAdmin, isWarehouse } = useAuth();
+  const { userDoc, isAdmin, isSatinAlma, isWarehouse } = useAuth();
   const canOperate = isAdmin || isSatinAlma || isWarehouse;
-  const navigate = useNavigate();
-  const location = useLocation();
 
-  const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('list'); // 'list' | 'new'
-  const [receipts, setReceipts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [parts, setParts] = useState([]);
-  
-  // Form State
-  const [form, setForm] = useState({ 
-    receiptNo: '', poId: '', poNumber: '', supplierName: '', 
-    waybillNo: '', waybillDate: new Date().toISOString().split('T')[0],
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState('list');
+  const [form, setForm] = useState({
+    receiptNo: '',
+    poId: '',
+    poNumber: '',
+    supplierId: '',
+    supplierName: '',
+    waybillNo: '',
+    waybillDate: new Date().toISOString().split('T')[0],
     receivedDate: new Date().toISOString().split('T')[0],
-    damageStatus: 'Hasarsız',
-    damageNotes: '',
-    items: [] 
+    notes: '',
+    items: [],
   });
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [oRes, pRes] = await Promise.all([getPurchaseOrders(), getParts()]);
-      setOrders(oRes.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => ['Gönderildi', 'Kısmi Teslim'].includes(o.status)));
-      setParts(pRes.docs.map(d => ({ id: d.id, ...d.data() })));
-      // Note: receipts list would come from a goods_receipts collection if implemented
+      const [orderSnap, partSnap, docSnap] = await Promise.all([getPurchaseOrders(), getParts(), getDocuments()]);
+      setOrders(
+        orderSnap.docs
+          .map((doc) => ({ id: doc.id, ...doc.data() }))
+          .filter((order) => ['Gönderildi', 'Kısmi Teslim', 'Sent', 'Partial'].includes(order.status))
+      );
+      setParts(partSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+      setDocs(docSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    } catch (error) {
+      console.error(error);
+      toast.error('Mal kabul verileri yüklenemedi');
+    } finally {
       setLoading(false);
-    } catch (e) {
-      toast.error('Veriler yüklenemedi');
     }
   };
 
-  const selectPO = (po) => {
-    const items = po.items.map(it => {
-      const part = parts.find(p => p.id === it.partId);
-      const isCritical = part?.isCritical || false;
-      const expectedQty = it.qty - (it.deliveredQty || 0);
-      
-      const now = new Date();
-      const lotNo = `LOT-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(Math.random()*9000)+1000}`;
+  const selectPurchaseOrder = (order) => {
+    const items = (order.items || []).map((item, index) => {
+      const part = parts.find((row) => row.id === item.partId);
+      const remainingQty = Number(item.remainingQty ?? item.qty ?? 0);
 
       return {
-        ...it,
-        receivedQty: expectedQty,
-        lotNumber: lotNo,
-        location: part?.warehouseLocation || 'A-01-01',
-        status: 'Karantina',
-        isCritical,
-        serials: isCritical ? Array(expectedQty).fill('') : [],
-        damagePhoto: null
+        ...item,
+        receivedQty: remainingQty,
+        location: part?.warehouseLocation || 'KARANTINA-A01',
+        lotNumber: previewLot(index),
+        qcStatus: 'Karantina',
       };
     });
+
     setForm({
-      ...form,
-      receiptNo: `GRN-${new Date().getFullYear()}-${Math.floor(Math.random()*9000)+1000}`,
-      poId: po.id,
-      poNumber: po.poNumber,
-      supplierId: po.supplierId,
-      supplierName: po.supplierName,
-      items
+      receiptNo: buildReceiptNumber(),
+      poId: order.id,
+      poNumber: order.poNumber,
+      supplierId: order.supplierId || '',
+      supplierName: order.supplierName || '',
+      waybillNo: '',
+      waybillDate: new Date().toISOString().split('T')[0],
+      receivedDate: new Date().toISOString().split('T')[0],
+      notes: '',
+      items,
     });
     setView('new');
   };
 
+  const updateItem = (index, field, value) => {
+    setForm((prev) => {
+      const items = [...prev.items];
+      items[index] = { ...items[index], [field]: field === 'receivedQty' ? Number(value) : value };
+      return { ...prev, items };
+    });
+  };
+
   const handleProcess = async () => {
     if (!canOperate) return;
-    
-    // Validate serials if critical
-    for (const item of form.items) {
-      if (item.isCritical && item.serials.some(s => !s)) {
-        return toast.error(`${item.partNumber} için tüm seri numaralarını giriniz.`);
-      }
+
+    const sourceOrder = orders.find((order) => order.id === form.poId);
+    if (!sourceOrder) {
+      toast.error('Bağlı satın alma siparişi bulunamadı');
+      return;
+    }
+
+    const validItems = form.items.filter((item) => Number(item.receivedQty || 0) > 0);
+    if (!validItems.length) {
+      toast.error('En az bir kalem için gelen miktar giriniz');
+      return;
     }
 
     try {
-      // 1. Update Inventory for each item
-      for (const item of form.items) {
-          if (item.receivedQty <= 0) continue;
+      const actorName = userDoc?.full_name || userDoc?.displayName || userDoc?.email || 'Sistem';
+      const processedItems = [];
+      const nextPoItems = (sourceOrder.items || []).map((item) => ({ ...item }));
 
-          if (item.isCritical) {
-            // Each serial is a separate batch
-            for (const serial of item.serials) {
-              await addInventoryBatch({
-                partId: item.partId,
-                partNumber: item.partNumber,
-                lotNumber: item.lotNumber,
-                serialNumber: serial,
-                quantity: 1,
-                remainingQty: 1,
-                location: item.location,
-                status: 'Karantina',
-                supplierId: form.supplierId,
-                poId: form.poId,
-                waybillNo: form.waybillNo,
-                damageStatus: form.damageStatus,
-                receivedDate: new Date().toISOString()
-              });
-            }
-          } else {
-            // Single batch for the lot
-            await addInventoryBatch({
-              partId: item.partId,
-              partNumber: item.partNumber,
-              lotNumber: item.lotNumber,
-              quantity: item.receivedQty,
-              remainingQty: item.receivedQty,
-              location: item.location,
-              status: 'Karantina',
-              supplierId: form.supplierId,
-              poId: form.poId,
-              waybillNo: form.waybillNo,
-              damageStatus: form.damageStatus,
-              receivedDate: new Date().toISOString()
-            });
-          }
+      for (const item of validItems) {
+        const orderLine = nextPoItems.find((row) => row.partId === item.partId);
+        const allowedQty = Number(orderLine?.remainingQty ?? orderLine?.qty ?? 0);
+        const receivedQty = Number(item.receivedQty || 0);
 
-          // Add Stock Movement
-          await addStockMovement({
-            partId: item.partId,
-            type: 'Satınalma Girişi',
-            quantity: item.receivedQty,
-            lotNumber: item.lotNumber,
-            reference: form.receiptNo,
-            notes: `${form.poNumber} nolu siparişten mal kabul. İrsaliye: ${form.waybillNo}`
+        if (receivedQty > allowedQty) {
+          toast.error(`${item.partNumber} için gelen miktar sipariş miktarını aşamaz`);
+          return;
+        }
+
+        const lotNumber = await generateLotNumber();
+        const part = parts.find((row) => row.id === item.partId);
+        const hasTechnicalPdf = docs.some(
+          (doc) =>
+            doc.linkedPartId === item.partId &&
+            doc.category === 'Teknik Resim' &&
+            String(doc.fileName || '').toLowerCase().endsWith('.pdf')
+        );
+
+        if (!hasTechnicalPdf) {
+          toast.error(`${item.partNumber} için teknik resim PDF bağlı olmadan mal kabul yapılamaz`);
+          return;
+        }
+
+        await addInventoryBatch({
+          batchId: lotNumber,
+          lotNumber,
+          partId: item.partId,
+          partNumber: item.partNumber,
+          partName: item.partName,
+          quantity: receivedQty,
+          remainingQty: receivedQty,
+          receivedDate: new Date(`${form.receivedDate}T00:00:00`).toISOString(),
+          warehouseLocation: item.location || part?.warehouseLocation || 'KARANTINA-A01',
+          location: item.location || part?.warehouseLocation || 'KARANTINA-A01',
+          supplierId: form.supplierId,
+          supplierName: form.supplierName,
+          poId: form.poId,
+          poNumber: form.poNumber,
+          grnNumber: form.receiptNo,
+          waybillNo: form.waybillNo || '',
+          qcStatus: 'Karantina',
+          status: 'Karantina',
+          createdBy: actorName,
+        });
+
+        await addStockMovement({
+          partId: item.partId,
+          partNumber: item.partNumber,
+          movementType: 'Satınalma Girişi',
+          qty: receivedQty,
+          lotNumber,
+          referenceNumber: form.receiptNo,
+          note: `${form.poNumber} siparişinden mal kabul`,
+          performedBy: actorName,
+          toLocation: item.location || part?.warehouseLocation || 'KARANTINA-A01',
+          createdAt: new Date().toISOString(),
+        });
+
+        if (part) {
+          await updatePart(part.id, {
+            currentStock: Number(part.currentStock || 0) + receivedQty,
+            stockStatus: 'Karantina',
+            warehouseLocation: part.warehouseLocation || item.location || 'KARANTINA-A01',
           });
+        }
 
-          // Update Part Master Total Stock
-          const p = parts.find(x => x.id === item.partId);
-          await updatePart(item.partId, {
-            currentStock: (p.currentStock || 0) + item.receivedQty
-          });
+        if (orderLine) {
+          const nextDelivered = Number(orderLine.deliveredQty || 0) + receivedQty;
+          orderLine.deliveredQty = nextDelivered;
+          orderLine.remainingQty = Math.max(0, Number(orderLine.qty || 0) - nextDelivered);
+        }
+
+        processedItems.push({
+          ...item,
+          lotNumber,
+          receivedQty,
+          qcStatus: 'Karantina',
+        });
       }
 
-      // 2. Update PO status
-      await updatePurchaseOrder(form.poId, {
-        status: 'Kısmi Teslim' // Simple toggle for now
+      const poStatus = nextPoItems.every((item) => Number(item.remainingQty || 0) === 0) ? 'Teslim Edildi' : 'Kısmi Teslim';
+
+      await addGoodsReceipt({
+        receiptNo: form.receiptNo,
+        grnNumber: form.receiptNo,
+        poId: form.poId,
+        poNumber: form.poNumber,
+        supplierId: form.supplierId,
+        supplierName: form.supplierName,
+        waybillNo: form.waybillNo,
+        waybillDate: form.waybillDate,
+        receivedDate: new Date(`${form.receivedDate}T00:00:00`).toISOString(),
+        status: 'QC Bekliyor',
+        notes: form.notes || '',
+        receivedBy: actorName,
+        items: processedItems,
       });
 
-      toast.success('Mal kabul başarıyla tamamlandı. Parçalar karantinaya alındı.');
-      navigate('/purchasing/orders');
-    } catch (e) {
-      toast.error('İşlem sırasında hata oluştu');
-      console.error(e);
+      await updatePurchaseOrder(form.poId, {
+        items: nextPoItems,
+        status: poStatus,
+      });
+
+      toast.success('Mal kabul tamamlandı, lotlar karantinaya alındı');
+      setView('list');
+      load();
+    } catch (error) {
+      console.error(error);
+      toast.error('Mal kabul işlemi tamamlanamadı');
     }
   };
 
@@ -175,181 +253,130 @@ export default function InventoryReceipts() {
   if (view === 'new') {
     return (
       <div className="anim-fade" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
-         <div style={{ background: '#0a0f1e', borderBottom: '1px solid #0e7490', padding: '16px 24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <button onClick={() => setView('list')} style={{ width: 40, height: 40, borderRadius: '50%', border: '1px solid #1e293b', background: '#0d1117', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                     <ChevronLeft size={20} />
-                  </button>
-                  <div>
-                     <h1 style={{ fontSize: 22, fontWeight: 800, color: '#fff', margin: 0 }}>Giriş Ambar Fişi: {form.receiptNo}</h1>
-                     <p style={{ color: '#475569', fontSize: 13, margin: '4px 0 0' }}>Ref: {form.poNumber} — {form.supplierName}</p>
-                  </div>
-               </div>
-               <div style={{ display: 'flex', gap: 12 }}>
-                  <button onClick={handleProcess} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 24px', background: '#0e7490', border: 'none', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', borderRadius: 8, boxShadow: '0 4px 12px rgba(14, 116, 144, 0.3)' }}>
-                     <ShieldCheck size={18} /> Sayımı Onayla & Karantinaya Al
-                  </button>
-               </div>
+        <div style={{ background: '#0a0f1e', borderBottom: '1px solid #0e7490', padding: '16px 24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <button onClick={() => setView('list')} style={{ width: 40, height: 40, borderRadius: '50%', border: '1px solid #1e293b', background: '#0d1117', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ChevronLeft size={20} />
+              </button>
+              <div>
+                <h1 style={{ fontSize: 22, fontWeight: 800, color: '#fff', margin: 0 }}>Mal Kabul Fişi: {form.receiptNo}</h1>
+                <p style={{ color: '#475569', fontSize: 13, margin: '4px 0 0' }}>{form.poNumber} - {form.supplierName}</p>
+              </div>
             </div>
-         </div>
+            <button onClick={handleProcess} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 24px', background: '#0e7490', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', borderRadius: 8 }}>
+              <ShieldCheck size={18} />
+              Mal Kabulü Tamamla
+            </button>
+          </div>
+        </div>
 
-         <div style={{ flex: 1, overflowY: 'auto', background: '#05070a', padding: 24 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 350px', gap: 24, maxWidth: 1400, margin: '0 auto' }}>
-               <div className="main">
-                  <div style={{ background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, padding: 20 }}>
-                     <h3 style={{ fontSize: 14, fontWeight: 800, color: '#60a5fa', margin: '0 0 20px', textTransform: 'uppercase' }}>Gelen Parça Listesi</h3>
-                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                           <tr>
-                              <th style={TH}>Parça No / Adı</th>
-                              <th style={{ ...TH, textAlign: 'right' }}>Sipariş Miktarı</th>
-                              <th style={{ ...TH, textAlign: 'right' }}>Gelen Miktar</th>
-                              <th style={TH}>Lot / Batch No</th>
-                              <th style={TH}>Adres (Depo)</th>
-                              <th style={TH}>Durum</th>
-                           </tr>
-                        </thead>
-                        <tbody>
-                           {form.items.map((item, idx) => (
-                             <div key={idx} style={{ display: 'contents' }}>
-                               <tr key={idx}>
-                                  <td style={TD}>
-                                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span style={{ color: '#f1f5f9', fontWeight: 700 }}>{item.partNumber}</span>
-                                        <span style={{ fontSize: 11, color: '#475569' }}>{item.partName}</span>
-                                     </div>
-                                  </td>
-                                  <td style={{ ...TD, textAlign: 'right', fontWeight: 700 }}>{item.qty}</td>
-                                  <td style={{ ...TD, textAlign: 'right' }}>
-                                     <input 
-                                       type="number" 
-                                       style={{ ...INPUT, width: 80, height: 32, textAlign: 'right', borderColor: '#0e7490' }} 
-                                       value={item.receivedQty} 
-                                       onChange={e => {
-                                         const items = [...form.items];
-                                         items[idx].receivedQty = Number(e.target.value);
-                                         setForm({ ...form, items });
-                                       }}
-                                     />
-                                  </td>
-                                  <td style={TD}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                         <Hash size={12} color="#475569" />
-                                         <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#e2e8f0' }}>{item.lotNumber}</span>
-                                      </div>
-                                   </td>
-                                   <td style={TD}>
-                                      <input 
-                                        style={{ ...INPUT, height: 32, fontSize: 11 }} 
-                                        value={item.location} 
-                                        onChange={e => {
-                                          const items = [...form.items];
-                                          items[idx].location = e.target.value;
-                                          setForm({ ...form, items });
-                                        }}
-                                      />
-                                   </td>
-                                   <td style={TD}>
-                                      <span style={{ fontSize: 10, fontWeight: 900, padding: '3px 8px', borderRadius: 4, background: '#422006', color: '#fbbf24' }}>KARANTİNA</span>
-                                   </td>
-                                </tr>
-                                {item.isCritical && (
-                                  <tr key={`serials-${idx}`}>
-                                    <td colSpan={6} style={{ padding: '0 16px 16px', background: 'rgba(239, 68, 68, 0.02)' }}>
-                                       <div style={{ background: '#0a0f1e', padding: 12, borderRadius: 8, border: '1px dashed #ef4444' }}>
-                                          <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 800, color: '#ef4444' }}>🔴 KRİTİK PARÇA - SERİ NUMARASI GİRİŞİ ZORUNLUDUR</p>
-                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-                                             {item.serials.map((s, sIdx) => (
-                                               <input 
-                                                 key={sIdx} 
-                                                 placeholder={`Seri No ${sIdx + 1}`} 
-                                                 style={{ ...INPUT, height: 30, fontSize: 11 }} 
-                                                 value={s}
-                                                 onChange={e => {
-                                                    const items = [...form.items];
-                                                    items[idx].serials[sIdx] = e.target.value;
-                                                    setForm({ ...form, items });
-                                                 }}
-                                               />
-                                             ))}
-                                          </div>
-                                       </div>
-                                    </td>
-                                  </tr>
-                                )}
-                             </div>
-                           ))}
-                        </tbody>
-                     </table>
-                  </div>
-               </div>
-
-               <div className="sidebar">
-                  <div style={{ background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, padding: 20 }}>
-                     <h4 style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', margin: '0 0 16px' }}>Mal Kabul Bilgileri</h4>
-                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        <div><label style={LABEL_STYLE}>İrsaliye / Fatura No</label><input style={INPUT} value={form.waybillNo} onChange={e=>setForm({...form, waybillNo: e.target.value})} placeholder="Örn: IRS-10293" /></div>
-                        <div><label style={LABEL_STYLE}>İrsaliye Tarihi</label><input type="date" style={INPUT} value={form.waybillDate} onChange={e=>setForm({...form, waybillDate: e.target.value})} /></div>
-                        <div><label style={LABEL_STYLE}>Fiziki Durum</label>
-                           <select style={INPUT} value={form.damageStatus} onChange={e=>setForm({...form, damageStatus: e.target.value})}>
-                              <option value="Hasarsız">Hasarsız (Kabul)</option>
-                              <option value="Hasarlı">Hasarlı (Karantina/Ret)</option>
-                              <option value="Kısmi Hasar">Kısmi Hasarlı</option>
-                           </select>
-                        </div>
-                        {form.damageStatus !== 'Hasarsız' && (
-                          <div><label style={LABEL_STYLE}>Hasar Notu / Açıklama</label><textarea style={{...INPUT, height: 60, padding: 8}} value={form.damageNotes} onChange={e=>setForm({...form, damageNotes: e.target.value})} /></div>
-                        )}
-                        <div><label style={LABEL_STYLE}>Kabul Tarihi</label><input type="date" style={INPUT} value={form.receivedDate} onChange={e=>setForm({...form, receivedDate: e.target.value})} /></div>
-                        <div><label style={LABEL_STYLE}>Kabul Eden</label><input style={INPUT} value={userDoc?.displayName} disabled /></div>
-                        
-                        <div style={{ background: '#0a0f1e', padding: 16, borderRadius: 8, border: '1px solid #1e293b', marginTop: 10 }}>
-                           <p style={{ margin: 0, fontSize: 11, color: '#475569', fontStyle: 'italic', lineHeight: '1.4' }}>Dikkat: Tüm girişler savunma sanayi standartları gereği otomatik olarak <strong>Karantina</strong> statüsünde açılır. Kalite onayından sonra stoklara geçer.</p>
-                        </div>
-                     </div>
-                  </div>
-               </div>
+        <div style={{ flex: 1, overflowY: 'auto', background: '#05070a', padding: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: 24, maxWidth: 1440, margin: '0 auto' }}>
+            <div style={{ background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, padding: 20 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 800, color: '#60a5fa', margin: '0 0 18px' }}>Gelen Kalemler</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={TH}>Parça</th>
+                    <th style={{ ...TH, textAlign: 'right' }}>Kalan Sipariş</th>
+                    <th style={{ ...TH, textAlign: 'right' }}>Gelen</th>
+                    <th style={TH}>Lot</th>
+                    <th style={TH}>Lokasyon</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.items.map((item, index) => (
+                    <tr key={`${item.partId}-${index}`}>
+                      <td style={TD}>
+                        <div style={{ fontWeight: 800, color: '#f8fafc' }}>{item.partNumber}</div>
+                        <div style={{ fontSize: 11, color: '#475569' }}>{item.partName}</div>
+                      </td>
+                      <td style={{ ...TD, textAlign: 'right', fontWeight: 800 }}>{item.remainingQty ?? item.qty}</td>
+                      <td style={{ ...TD, textAlign: 'right' }}>
+                        <input type="number" min="0" max={item.remainingQty ?? item.qty} style={{ ...INPUT, width: 90, textAlign: 'right' }} value={item.receivedQty} onChange={(event) => updateItem(index, 'receivedQty', event.target.value)} />
+                      </td>
+                      <td style={{ ...TD, fontFamily: 'monospace', color: '#60a5fa' }}>{item.lotNumber}</td>
+                      <td style={TD}>
+                        <input style={{ ...INPUT, height: 32 }} value={item.location} onChange={(event) => updateItem(index, 'location', event.target.value)} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-         </div>
+
+            <div style={{ background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, padding: 20 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', margin: '0 0 16px' }}>Fiş Bilgileri</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <label style={LABEL}>İrsaliye / Fatura No</label>
+                  <input style={INPUT} value={form.waybillNo} onChange={(event) => setForm((prev) => ({ ...prev, waybillNo: event.target.value }))} />
+                </div>
+                <div>
+                  <label style={LABEL}>İrsaliye Tarihi</label>
+                  <input type="date" style={INPUT} value={form.waybillDate} onChange={(event) => setForm((prev) => ({ ...prev, waybillDate: event.target.value }))} />
+                </div>
+                <div>
+                  <label style={LABEL}>Kabul Tarihi</label>
+                  <input type="date" style={INPUT} value={form.receivedDate} onChange={(event) => setForm((prev) => ({ ...prev, receivedDate: event.target.value }))} />
+                </div>
+                <div>
+                  <label style={LABEL}>Notlar</label>
+                  <textarea style={{ ...INPUT, height: 80, padding: 10, resize: 'none' }} value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} />
+                </div>
+                <div style={{ padding: 14, background: '#0a0f1e', borderRadius: 10, border: '1px solid #1e293b', color: '#94a3b8', fontSize: 12, lineHeight: 1.6 }}>
+                  Gelen tüm kalemler otomatik olarak <strong style={{ color: '#fbbf24' }}>Karantina</strong> lotu olarak açılır.
+                  <br />
+                  Kalite onayından sonra üretim ve sevkiyat için kullanılabilir.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="anim-fade" style={{ padding: '24px', maxWidth: 1600, margin: '0 auto' }}>
+    <div className="anim-fade" style={{ padding: '24px', maxWidth: 1440, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: 0 }}>Giriş Kalite & Mal Kabul</h1>
-          <p style={{ color: '#475569', fontSize: 13, marginTop: 4 }}>Tedarikçiden gelen sevkiyatların sisteme kabulü ve lotlama işlemleri</p>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: 0 }}>Mal Kabul</h1>
+          <p style={{ color: '#475569', fontSize: 13, marginTop: 4 }}>Sevk edilmiş satın alma siparişlerinden lot bazlı kabul</p>
         </div>
         <div style={{ padding: '8px 16px', background: '#064e3b', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
-           <Truck size={18} color="#34d399" />
-           <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399' }}>{orders.length} BEKLEYEN SEVKİYAT</span>
+          <Truck size={18} color="#34d399" />
+          <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399' }}>{orders.length} bekleyen sipariş</span>
         </div>
       </div>
 
-      <div style={{ background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, padding: 24, textAlign: 'center' }}>
-         <h3 style={{ fontSize: 16, fontWeight: 800, color: '#e2e8f0', margin: '0 0 12px' }}>Sevkiyat Bekleyen Siparişler</h3>
-         <p style={{ color: '#475569', marginBottom: 24 }}>Lütfen mal kabulü yapılacak olan siparişi (PO) seçiniz.</p>
-         
-         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 16, textAlign: 'left' }}>
-            {orders.length === 0 ? <div style={{ gridColumn: '1/-1' }}><EmptyState message="Şu an bekleyen sevkiyat bulunmuyor." /></div> : (
-               orders.map(o => (
-                  <div key={o.id} onClick={() => selectPO(o)} style={{ background: '#0a0f1e', border: '1px solid #1e293b', borderRadius: 12, padding: 16, cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={e=>{e.currentTarget.style.borderColor='#0e7490'; e.currentTarget.style.background='#0d1117'}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#1e293b'; e.currentTarget.style.background='#0a0f1e'}}>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', fontFamily: 'monospace' }}>{o.poNumber}</span>
-                        <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: '#1e3a5f', color: '#60a5fa' }}>{o.status?.toUpperCase()}</span>
-                     </div>
-                     <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 700, color: '#e2e8f0' }}>{o.supplierName}</h4>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #1e293b', paddingTop: 12 }}>
-                        <span style={{ fontSize: 11, color: '#475569' }}>{o.items?.length || 0} Kalem</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>{formatDate(o.orderDate)}</span>
-                     </div>
-                  </div>
-               ))
-            )}
-         </div>
+      <div style={{ background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, padding: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+          {orders.length === 0 ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <EmptyState message="Mal kabul bekleyen sipariş bulunmuyor." />
+            </div>
+          ) : (
+            orders.map((order) => (
+              <div key={order.id} onClick={() => selectPurchaseOrder(order)} style={{ background: '#0a0f1e', border: '1px solid #1e293b', borderRadius: 12, padding: 18, cursor: 'pointer' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#60a5fa', fontFamily: 'monospace' }}>{order.poNumber}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: '#fbbf24' }}>{order.status}</span>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#f8fafc', marginBottom: 8 }}>{order.supplierName}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#94a3b8' }}>
+                  <span>{(order.items || []).length} kalem</span>
+                  <span>{formatDate(order.createdAt || order.orderDate)}</span>
+                </div>
+                <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, color: '#64748b', fontSize: 11 }}>
+                  <Package size={14} />
+                  Teslim alınan miktar lot bazında karantinaya açılır
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
