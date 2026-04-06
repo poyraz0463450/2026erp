@@ -30,6 +30,3 @@ dist-ssr
 
 # Firebase
 .firebase
-
-# Vite cache
-.vite/
